@@ -17,7 +17,6 @@ import {
 } from './gameEngine';
 import './App.css';
 
-// Helper to create initial state
 function createInitialState(): GameState {
   return {
     units: [],
@@ -34,12 +33,11 @@ function App() {
   const [floatingTexts, setFloatingTexts] = useState<
     Array<{ id: string; x: number; y: number; text: string; type: string; time: number }>
   >([]);
+  const [activeTab, setActiveTab] = useState<'heroes' | 'log'>('heroes');
   const logRef = useRef<HTMLDivElement>(null);
   const battleLoopRef = useRef<number | null>(null);
   const lastTickRef = useRef<number>(0);
-  useState({});
 
-  // Keep last battle time for continuity
   const battleTimeRef = useRef(0);
 
   // Compute synergies
@@ -49,26 +47,20 @@ function App() {
   const activePlayerSynergies = Array.from(playerSynergies.values()).filter((s) => s.active);
   const activeEnemySynergies = Array.from(enemySynergies.values()).filter((s) => s.active);
 
-  // Get player units
-  const _playerUnits = gameState.units.filter((u) => u.team === 'player');
-  const _enemyUnits = gameState.units.filter((u) => u.team === 'enemy');
+  const isHeroPlaced = (heroId: string) =>
+    gameState.units.some((u) => !u.isDead && u.team === 'player' && u.config.id === heroId);
 
-  // Add floating text
-  // Handle clicking on board cell
   const handleBoardClick = useCallback(
     (col: number, row: number) => {
       if (gameState.phase !== 'setup') return;
-      if (row < 2) return; // Only player zone
+      if (row < 2) return;
 
-      // Remove any existing unit at this position
       const existingIdx = gameState.units.findIndex(
         (u) => !u.isDead && u.team === 'player' && u.x === col && u.y === row
       );
 
       if (selectedHeroId) {
-        // Place selected hero
         const config = HEROES[selectedHeroId];
-        // Check if hero already on board
         const alreadyOnBoard = gameState.units.some(
           (u) => !u.isDead && u.team === 'player' && u.config.id === selectedHeroId
         );
@@ -79,23 +71,16 @@ function App() {
 
         let newUnits: Unit[];
         if (existingIdx >= 0) {
-          // Replace existing
           newUnits = gameState.units.map((u, i) =>
-            i === existingIdx
-              ? createUnit(config, col, row, 'player')
-              : u
+            i === existingIdx ? createUnit(config, col, row, 'player') : u
           );
         } else {
-          newUnits = [
-            ...gameState.units,
-            createUnit(config, col, row, 'player'),
-          ];
+          newUnits = [...gameState.units, createUnit(config, col, row, 'player')];
         }
 
         setGameState((prev) => ({ ...prev, units: newUnits }));
         setSelectedHeroId(null);
       } else if (existingIdx >= 0) {
-        // Click on existing unit to remove
         const newUnits = gameState.units.filter((_, i) => i !== existingIdx);
         setGameState((prev) => ({ ...prev, units: newUnits }));
       }
@@ -103,7 +88,6 @@ function App() {
     [gameState.phase, gameState.units, selectedHeroId]
   );
 
-  // Auto fill
   const handleAutoFill = useCallback(() => {
     if (gameState.phase !== 'setup') return;
     let units = gameState.units.filter((u) => u.team === 'enemy');
@@ -111,7 +95,6 @@ function App() {
     setGameState((prev) => ({ ...prev, units: newUnits }));
   }, [gameState]);
 
-  // Reset
   const handleReset = useCallback(() => {
     if (battleLoopRef.current) {
       cancelAnimationFrame(battleLoopRef.current);
@@ -123,7 +106,6 @@ function App() {
     battleTimeRef.current = 0;
   }, []);
 
-  // Start battle
   const handleStartBattle = useCallback(() => {
     if (!isPlayerTeamReady(gameState.units)) return;
 
@@ -132,24 +114,15 @@ function App() {
       ...createEnemyUnits(),
     ];
 
-    // Apply synergy bonuses to maxHp
     const unitsWithSynergy = allUnits.map((u) => {
       const bonus = getSynergyBonus(u, allUnits);
       const hpBonus = bonus.hpBonus;
       const newMaxHp = u.config.maxHp + hpBonus;
-      return {
-        ...u,
-        maxHp: newMaxHp,
-        hp: newMaxHp,
-      };
+      return { ...u, maxHp: newMaxHp, hp: newMaxHp };
     });
 
     const newLog: CombatLogEntry[] = [
-      {
-        time: Date.now(),
-        message: '⚔️ 战斗开始！',
-        type: 'skill',
-      },
+      { time: Date.now(), message: '⚔️ 战斗开始！', type: 'skill' },
     ];
 
     setGameState({
@@ -162,7 +135,6 @@ function App() {
     battleTimeRef.current = 0;
     lastTickRef.current = performance.now();
 
-    // Start battle loop
     const loop = (now: number) => {
       const delta = now - lastTickRef.current;
       lastTickRef.current = now;
@@ -171,7 +143,6 @@ function App() {
       setGameState((prev) => {
         if (prev.phase !== 'battle') return prev;
 
-        // Move tick every MOVE_INTERVAL ms
         if (delta >= MOVE_INTERVAL) {
           const { newState, newLog: logUpdate } = processTick(
             { ...prev, battleTime: battleTimeRef.current },
@@ -179,7 +150,6 @@ function App() {
             combatLog
           );
 
-          // Extract floating text info from log
           const newTexts: typeof floatingTexts = [];
           for (const entry of logUpdate.slice(-10)) {
             if (entry.type === 'damage') {
@@ -187,19 +157,13 @@ function App() {
               if (parts) {
                 const targetName = parts[1];
                 const dmg = parts[2];
-                const target = newState.units.find(
-                  (u) => u.config.name === targetName
-                );
+                const target = newState.units.find((u) => u.config.name === targetName);
                 if (target) {
                   const px = target.x * CELL_SIZE + CELL_SIZE / 2;
                   const py = target.y * CELL_SIZE + CELL_SIZE / 2;
                   newTexts.push({
                     id: `${Date.now()}-${Math.random()}`,
-                    x: px,
-                    y: py,
-                    text: `-${dmg}`,
-                    type: 'damage',
-                    time: Date.now(),
+                    x: px, y: py, text: `-${dmg}`, type: 'damage', time: Date.now(),
                   });
                 }
               }
@@ -209,19 +173,13 @@ function App() {
                 const heal = parts[1];
                 const nameMatch = entry.message.match(/为 (.+?) 回复/);
                 if (nameMatch) {
-                  const target = newState.units.find(
-                    (u) => u.config.name === nameMatch[1]
-                  );
+                  const target = newState.units.find((u) => u.config.name === nameMatch[1]);
                   if (target) {
                     const px = target.x * CELL_SIZE + CELL_SIZE / 2;
                     const py = target.y * CELL_SIZE + CELL_SIZE / 2;
                     newTexts.push({
                       id: `${Date.now()}-${Math.random()}`,
-                      x: px,
-                      y: py,
-                      text: `+${heal}`,
-                      type: 'heal',
-                      time: Date.now(),
+                      x: px, y: py, text: `+${heal}`, type: 'heal', time: Date.now(),
                     });
                   }
                 }
@@ -238,13 +196,14 @@ function App() {
             }, 1500);
           }
 
-          setCombatLog((prevLog) => [...prevLog, ...logUpdate.slice(combatLog.length ? -20 : -30)]);
+          setCombatLog((prevLog) => [
+            ...prevLog,
+            ...logUpdate.slice(combatLog.length ? -20 : -30),
+          ]);
 
           if (newState.phase === 'ended') {
             const winnerMsg =
-              newState.winner === 'player'
-                ? '🏆 玩家获胜！'
-                : '💀 敌方获胜！';
+              newState.winner === 'player' ? '🏆 玩家获胜！' : '💀 敌方获胜！';
             setCombatLog((prev) => [
               ...prev,
               { time: Date.now(), message: winnerMsg, type: 'death' },
@@ -253,7 +212,6 @@ function App() {
 
           return newState;
         }
-
         return prev;
       });
 
@@ -270,14 +228,12 @@ function App() {
     battleLoopRef.current = requestAnimationFrame(loop);
   }, [gameState.units, combatLog]);
 
-  // Cleanup on unmount
   useEffect(() => {
     return () => {
       if (battleLoopRef.current) cancelAnimationFrame(battleLoopRef.current);
     };
   }, []);
 
-  // Scroll log to bottom
   useEffect(() => {
     if (logRef.current) {
       logRef.current.scrollTop = logRef.current.scrollHeight;
@@ -290,22 +246,18 @@ function App() {
     return `${m}:${(s % 60).toString().padStart(2, '0')}`;
   };
 
-  // Check if a hero is already placed
-  const isHeroPlaced = (heroId: string) =>
-    gameState.units.some((u) => !u.isDead && u.team === 'player' && u.config.id === heroId);
-
   return (
     <div className="game-container">
-      {/* Header - Synergies */}
+      {/* Top Bar - Synergies */}
       <div className="synergy-bar">
-        <div className="synergy-section player-synergies">
-          <span className="synergy-label">我方协同</span>
+        <div className="synergy-section">
+          <span className="synergy-label">我方</span>
           {activePlayerSynergies.length === 0 ? (
-            <span className="synergy-none">无</span>
+            <span className="synergy-none">-</span>
           ) : (
             activePlayerSynergies.map((s) => (
               <span key={s.name} className="synergy-badge active">
-                {s.name}×{s.count} {s.bonus}
+                {s.name}×{s.count}
               </span>
             ))
           )}
@@ -314,29 +266,98 @@ function App() {
           {gameState.phase === 'battle' && formatTime(gameState.battleTime)}
           {gameState.phase === 'ended' && (
             <span className={gameState.winner === 'player' ? 'win-text' : 'lose-text'}>
-              {gameState.winner === 'player' ? '胜利!' : '失败'}
+              {gameState.winner === 'player' ? '胜' : '败'}
             </span>
           )}
         </div>
-        <div className="synergy-section enemy-synergies">
-          <span className="synergy-label">敌方协同</span>
+        <div className="synergy-section">
+          <span className="synergy-label">敌方</span>
           {activeEnemySynergies.length === 0 ? (
-            <span className="synergy-none">无</span>
+            <span className="synergy-none">-</span>
           ) : (
             activeEnemySynergies.map((s) => (
               <span key={s.name} className="synergy-badge enemy">
-                {s.name}×{s.count} {s.bonus}
+                {s.name}×{s.count}
               </span>
             ))
           )}
         </div>
       </div>
 
-      {/* Main Area */}
-      <div className="main-area">
-        {/* Left - Hero Bench */}
-        <div className="hero-bench">
-          <div className="bench-title">英雄选择</div>
+      {/* Board Area */}
+      <div className="board-area">
+        <div className="board-label enemy-label">敌方</div>
+        <div className="board">
+          {Array.from({ length: BOARD_ROWS }).map((_, row) => (
+            <div key={row} className="board-row">
+              {Array.from({ length: BOARD_COLS }).map((_, col) => {
+                const unit = gameState.units.find(
+                  (u) => !u.isDead && u.x === col && u.y === row
+                );
+                const isEnemy = unit?.team === 'enemy';
+                const isPlayer = unit?.team === 'player';
+
+                return (
+                  <div
+                    key={`${col}-${row}`}
+                    className={`board-cell ${row < 2 ? 'enemy-zone' : 'player-zone'} ${unit ? 'occupied' : ''}`}
+                    onClick={() => handleBoardClick(col, row)}
+                  >
+                    {unit && (
+                      <div
+                        className={`unit ${unit.isDead ? 'dead' : ''} ${unit.stunDuration > 0 ? 'stunned' : ''} ${unit.shieldDuration > 0 ? 'shielded' : ''} ${isEnemy ? 'enemy' : 'player'}`}
+                      >
+                        <div className="unit-avatar">{unit.config.name[0]}</div>
+                        <div className="unit-hp-bar">
+                          <div
+                            className="unit-hp-fill"
+                            style={{ width: `${(unit.hp / unit.maxHp) * 100}%` }}
+                          />
+                        </div>
+                        <div className="unit-hp-text">
+                          {unit.hp}/{unit.maxHp}
+                        </div>
+                        {unit.stunDuration > 0 && <div className="stun-indicator">💫</div>}
+                        {unit.shieldDuration > 0 && <div className="shield-indicator">🛡️</div>}
+                        {unit.attackBuff > 0 && (
+                          <div className="buff-indicator">⚔️+{Math.round(unit.attackBuff * 100)}%</div>
+                        )}
+                        {unit.isDead && <div className="death-overlay">💀</div>}
+                      </div>
+                    )}
+                    {selectedHeroId && !unit && row >= 2 && (
+                      <div className="cell-hint">
+                        <span>+</span>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          ))}
+        </div>
+        <div className="board-label player-label">我方</div>
+      </div>
+
+      {/* Bottom Panel - Tabs */}
+      <div className="bottom-panel">
+        <div className="tab-bar">
+          <button
+            className={`tab-btn ${activeTab === 'heroes' ? 'active' : ''}`}
+            onClick={() => setActiveTab('heroes')}
+          >
+            英雄
+          </button>
+          <button
+            className={`tab-btn ${activeTab === 'log' ? 'active' : ''}`}
+            onClick={() => setActiveTab('log')}
+          >
+            日志
+          </button>
+        </div>
+
+        {/* Hero Bench */}
+        <div className={`hero-bench ${activeTab === 'heroes' ? 'visible' : ''}`}>
           <div className="hero-list">
             {HERO_IDS.map((heroId) => {
               const hero = HEROES[heroId];
@@ -353,16 +374,7 @@ function App() {
                   </div>
                   <div className="hero-info">
                     <div className="hero-name">{hero.name}</div>
-                    <div className="hero-class">{hero.title}</div>
-                    <div className="hero-hp-bar">
-                      <div
-                        className="hero-hp-fill"
-                        style={{ width: '100%', background: '#e74c3c' }}
-                      />
-                    </div>
-                    <div className="hero-stats">
-                      ⚔️{hero.attack} 🛡️{hero.armor} ⏱️{hero.attackSpeed}ms
-                    </div>
+                    <div className="hero-title">{hero.title}</div>
                   </div>
                   {placed && <div className="placed-badge">已上场</div>}
                 </div>
@@ -371,76 +383,10 @@ function App() {
           </div>
         </div>
 
-        {/* Center - Board */}
-        <div className="board-wrapper">
-          <div className="board-label enemy-label">敌方区域</div>
-          <div className="board">
-            {Array.from({ length: BOARD_ROWS }).map((_, row) => (
-              <div key={row} className="board-row">
-                {Array.from({ length: BOARD_COLS }).map((_, col) => {
-                  const unit = gameState.units.find(
-                    (u) => !u.isDead && u.x === col && u.y === row
-                  );
-                  const isEnemy = unit?.team === 'enemy';
-                  const isPlayer = unit?.team === 'player';
-                  const _synergyBonus = unit ? getSynergyBonus(unit, gameState.units) : null;
-
-                  return (
-                    <div
-                      key={`${col}-${row}`}
-                      className={`board-cell ${row < 2 ? 'enemy-zone' : 'player-zone'} ${unit ? 'occupied' : ''} ${isEnemy ? 'enemy-unit' : ''} ${isPlayer ? 'player-unit' : ''}`}
-                      onClick={() => handleBoardClick(col, row)}
-                    >
-                      {unit && (
-                        <div
-                          className={`unit ${unit.isDead ? 'dead' : ''} ${unit.stunDuration > 0 ? 'stunned' : ''} ${unit.shieldDuration > 0 ? 'shielded' : ''} ${isEnemy ? 'enemy' : 'player'}`}
-                          style={{ '--unit-color': unit.config.color } as React.CSSProperties}
-                        >
-                          <div className="unit-avatar">
-                            {unit.config.name[0]}
-                          </div>
-                          <div className="unit-hp-bar">
-                            <div
-                              className="unit-hp-fill"
-                              style={{ width: `${(unit.hp / unit.maxHp) * 100}%` }}
-                            />
-                          </div>
-                          <div className="unit-hp-text">
-                            {unit.hp}/{unit.maxHp}
-                          </div>
-                          {unit.stunDuration > 0 && (
-                            <div className="stun-indicator">💫</div>
-                          )}
-                          {unit.shieldDuration > 0 && (
-                            <div className="shield-indicator">🛡️</div>
-                          )}
-                          {unit.attackBuff > 0 && (
-                            <div className="buff-indicator">⚔️+{Math.round(unit.attackBuff * 100)}%</div>
-                          )}
-                          {unit.isDead && (
-                            <div className="death-overlay">💀</div>
-                          )}
-                        </div>
-                      )}
-                      {selectedHeroId && !unit && row >= 2 && (
-                        <div className="cell-hint">
-                          <span>+</span>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            ))}
-          </div>
-          <div className="board-label player-label">我方区域</div>
-        </div>
-
-        {/* Right - Combat Log */}
-        <div className="combat-log">
-          <div className="log-title">战斗日志</div>
+        {/* Combat Log */}
+        <div className={`combat-log ${activeTab === 'log' ? 'visible' : ''}`}>
           <div className="log-entries" ref={logRef}>
-            {combatLog.slice(-120).map((entry, idx) => (
+            {combatLog.slice(-80).map((entry, idx) => (
               <div key={idx} className={`log-entry ${entry.type}`}>
                 {entry.message}
               </div>
@@ -449,21 +395,21 @@ function App() {
         </div>
       </div>
 
-      {/* Footer - Controls */}
+      {/* Controls */}
       <div className="controls">
         <button
           className="btn btn-start"
           onClick={handleStartBattle}
           disabled={gameState.phase !== 'setup' || !isPlayerTeamReady(gameState.units)}
         >
-          开始战斗
+          开始
         </button>
         <button
           className="btn btn-auto"
           onClick={handleAutoFill}
           disabled={gameState.phase !== 'setup'}
         >
-          自动填充
+          自动
         </button>
         <button className="btn btn-reset" onClick={handleReset}>
           重置
@@ -471,13 +417,11 @@ function App() {
         <div className="placement-hint">
           {gameState.phase === 'setup' && (
             selectedHeroId
-              ? `点击棋盘放置 ${HEROES[selectedHeroId].name}（点击已放置单位可移除）`
-              : '选择英雄后点击棋盘放置'
+              ? `点击棋盘放置 ${HEROES[selectedHeroId].name}`
+              : '选英雄→放棋盘'
           )}
           {gameState.phase === 'battle' && '⚔️ 战斗中...'}
-          {gameState.phase === 'ended' && (
-            gameState.winner === 'player' ? '🏆 恭喜获胜！' : '💀 失败...'
-          )}
+          {gameState.phase === 'ended' && (gameState.winner === 'player' ? '🏆 获胜！' : '💀 失败')}
         </div>
       </div>
     </div>
